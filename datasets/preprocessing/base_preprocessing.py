@@ -26,7 +26,7 @@ class BasePreprocessing:
 
         if not self.data_dir.exists():
             logger.error("data folder doesn't exist")
-            raise FileNotFoundError
+            raise FileNotFoundError(f"{self.data_dir} <-")
         if self.save_dir.exists() is False:
             self.save_dir.mkdir(parents=True, exist_ok=True)
 

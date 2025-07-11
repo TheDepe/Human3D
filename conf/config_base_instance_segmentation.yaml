@@ -9,7 +9,7 @@ general:
   train_on_segments: false
   eval_on_segments: false
   filter_out_instances: false
-  save_visualizations: false
+  save_visualizations: true
   visualization_point_size: 20
   decoder_id: -1
   export: false
@@ -57,10 +57,10 @@ general:
 defaults:
   - data: indoor
   - data/data_loaders: simple_loader
-  - data/datasets: scannet
+  - data/datasets: egobody
   - data/collation_functions: voxelize_collate
   - logging: full
-  - model: mask3d
+  - model: mask3d_hp
   - metrics: miou
   - optimizer: adamw
   - scheduler: onecyclelr

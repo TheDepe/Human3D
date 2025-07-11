@@ -225,7 +225,7 @@ class HumanSegmentationDataset(BasePreprocessing):
                 if self.dataset == "egobody" and mode == "validation":
                     self.files[mode] = natsorted(
                         [
-                            f"{self.data_dir}/validation/{line.strip()}"
+                            f"{self.data_dir}/scenes/{line.strip()}"
                             for line in file
                         ]
                     )
@@ -280,6 +280,8 @@ class HumanSegmentationDataset(BasePreprocessing):
         Returns:
             filebase: info about file
         """
+
+        # Extracting scene name from filepath
         if self.dataset == "egobody":
             scene_name = "_".join(filepath.split("/")[-3:]).replace(".ply", "")
         else:
@@ -290,26 +292,30 @@ class HumanSegmentationDataset(BasePreprocessing):
             "scene": scene_name,
             "raw_filepath": str(filepath),
         }
-
+        
+        # Read point cloud
         # reading both files and checking that they are fitting
         pcd = self.read_plyfile(filepath)
         coords = pcd[:, :3]
 
-        # fix rotation bug
+        # fix rotation bug (THIS IS NOT A BUG. THIS IS JUST CHANGING THE CONVENTION)
+        # FROM WHAT TO WHAT?
         coords = coords[:, [0, 2, 1]]
         coords[:, 2] = -coords[:, 2]
 
+        # Extract channels
         rgb = pcd[:, 3:6]
         instance_id = pcd[:, 6][..., None]
 
+        # Filter small/invalid scenes
         if (
             coords.shape[0] < self.min_points
             or np.unique(instance_id[:, 0]).shape[0] <= self.min_instances
         ):
             return scene_name
 
+        # Remap part indices (dataset parts -> model parts)
         part_id = pcd[:, 7][..., None]
-
         part_id = np.array(
             [
                 self.LABEL_MAPPER_FOR_BODY_PART_SEGM[int(part_id[i, 0])]
@@ -317,15 +323,19 @@ class HumanSegmentationDataset(BasePreprocessing):
             ]
         )[..., None].astype(np.float32)
 
+        # Assemble final dataset [x,y,z,r,b,g, part_id, instance_id] [N, 8]
         points = np.hstack((coords, rgb, part_id, instance_id))
 
+        # Exclude NANs or infs
         if np.isinf(points).sum() > 0:
             # some scenes (scene0573_01_frame_04) got nans
             return scene_name
 
+        # Generate ground truth labels eg 4501 4502 (last digits are humans instance ids)
         gt_part = part_id * 1000 + instance_id
         gt_human = (part_id > 0.0) * 1000 + instance_id
 
+        # Save stuff
         processed_filepath = self.save_dir / mode / f"{scene_name}.npy"
         if not processed_filepath.parent.exists():
             processed_filepath.parent.mkdir(parents=True, exist_ok=True)

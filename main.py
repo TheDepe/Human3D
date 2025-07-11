@@ -42,13 +42,13 @@ def get_parameters(cfg: DictConfig):
         ] = f"{cfg.general.save_dir}/last-epoch.ckpt"
 
     for log in cfg.logging:
-        print(log)
         loggers.append(hydra.utils.instantiate(log))
         loggers[-1].log_hyperparams(
             flatten_dict(OmegaConf.to_container(cfg, resolve=True))
         )
 
     model = InstanceSegmentation(cfg)
+
     if cfg.general.backbone_checkpoint is not None:
         cfg, model = load_backbone_checkpoint_with_missing_or_exsessive_keys(
             cfg, model
@@ -56,7 +56,7 @@ def get_parameters(cfg: DictConfig):
     if cfg.general.checkpoint is not None:
         cfg, model = load_checkpoint_with_missing_or_exsessive_keys(cfg, model)
 
-    logger.info(flatten_dict(OmegaConf.to_container(cfg, resolve=True)))
+    #logger.info(flatten_dict(OmegaConf.to_container(cfg, resolve=True)))
     return cfg, model, loggers
 
 
@@ -91,20 +91,50 @@ def test(cfg: DictConfig):
     cfg, model, loggers = get_parameters(cfg)
     runner = Trainer(
         gpus=cfg.general.gpus,
-        logger=loggers,
+        #logger=loggers,
         weights_save_path=str(cfg.general.save_dir),
         **cfg.trainer,
     )
     runner.test(model)
+    print("TEST FINISHED")
 
 
 @hydra.main(
     config_path="conf", config_name="config_base_instance_segmentation.yaml"
 )
+def vis(cfg: DictConfig):
+    # because hydra wants to change dir for some reason
+    os.chdir(hydra.utils.get_original_cwd())
+    cfg, model, loggers = get_parameters(cfg)
+    runner = Trainer(
+        gpus=cfg.general.gpus,
+        #logger=loggers,
+        weights_save_path=str(cfg.general.save_dir),
+        **cfg.trainer,
+    )
+    model.prepare_data()
+    loader = model.test_dataloader()
+    batch = next(iter(loader))
+    model.eval()  # disable dropout, etc.
+
+    import torch
+    with torch.no_grad():
+        file_name = "visualization_result"  # Specify the output file name
+        model.visualize_forward_pass(batch, file_name)
+
+    print("Visualization finished")
+
+@hydra.main(
+    config_path="conf", config_name="config_base_instance_segmentation.yaml"
+)
+
 def main(cfg: DictConfig):
     if cfg["general"]["train_mode"]:
         train(cfg)
+    elif cfg["general"].get("vis_only", False):
+        vis(cfg)
     else:
+        print("DOING TEST")
         test(cfg)
 
 

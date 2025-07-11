@@ -240,7 +240,7 @@ class Res16UNetBase(ResNetBase):
 
     def forward(self, x):
         feature_maps = []
-
+ 
         out = self.conv0p1s1(x)
         out = self.bn0(out)
         out_p1 = self.relu(out)

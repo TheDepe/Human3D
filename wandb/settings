@@ -1,0 +1,5 @@
+[default]
+entity = dennis-perrett-mpi-is
+project = human3d
+base_url = https://api.wandb.ai
+

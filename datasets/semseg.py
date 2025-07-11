@@ -230,7 +230,7 @@ class SemanticSegmentationDataset(Dataset):
         for database_path in self.data_dir:
             database_path = Path(database_path)
             if not (database_path / f"{mode}_database.yaml").exists():
-                print(f"generate {database_path}/{mode}_database.yaml first")
+                print(f"generate {database_path}/{mode}_database.yaml first. Exiting.")
                 exit()
             self._data.extend(
                 self._load_yaml(database_path / f"{mode}_database.yaml")
@@ -241,7 +241,6 @@ class SemanticSegmentationDataset(Dataset):
             )
 
         labels = self._load_yaml(Path(label_db_filepath))
-
         # if working only on classes for validation - discard others
         self._labels = self._select_correct_labels(labels, num_labels)
 
@@ -355,6 +354,7 @@ class SemanticSegmentationDataset(Dataset):
                 self._data = new_data
                 # new_data.append(np.load(self.data[i]["filepath"].replace("../../", "")))
             # self._data = new_data
+            print("LOADED DATA")
 
     def splitPointCloud(self, cloud, size=50.0, stride=50, inner_core=-1):
         if inner_core == -1:
@@ -424,22 +424,28 @@ class SemanticSegmentationDataset(Dataset):
             return self.reps_per_epoch * len(self.data)
 
     def __getitem__(self, idx: int):
+        # Indexing stuff
         idx = idx % len(self.data)
         if self.is_tta:
             idx = idx % len(self.data)
 
+        # Load data. Load from memory if caching is enabled
         if self.cache_data:
             points = self.data[idx]["data"]
         else:
             assert not self.on_crops, "you need caching if on crops"
-            points = np.load(self.data[idx]["filepath"].replace("../../", ""))
-
+            try:
+                points = np.load(self.data[idx]["filepath"].replace("../../", ""))
+            except ValueError as e:
+                raise ValueError(
+                    f"Failed to load file {self.data[idx]['filepath'].replace('../../', '')}: {e}"
+                ) from e
+        # Split channels and prepare normals and segments
         coordinates, color, labels = (
             points[:, :3],
             points[:, 3:6],
             points[:, 6:8],
         )
-
         normals = np.ones((color.shape[0], 3))
         segments = np.ones(color.shape[0])
 
@@ -447,10 +453,13 @@ class SemanticSegmentationDataset(Dataset):
         raw_color = color
         raw_normals = normals
 
+
         if not self.add_colors:
             color = np.ones((len(color), 3))
+        
 
-        # volume and image augmentations for train
+
+        # Add Augmentations: volume and image augmentations for train
         if "train" in self.mode or self.is_tta:
             if self.cropping:
                 new_idx = self.random_cuboid(
@@ -645,6 +654,7 @@ class SemanticSegmentationDataset(Dataset):
         pseudo_image = color.astype(np.uint8)[np.newaxis, :, :]
         color = np.squeeze(self.normalize_color(image=pseudo_image)["image"])
 
+        # Create labels similar to preprocessing eg 4501 and 4502 
         labels[:, 1] = labels[:, 0] * 1000 + labels[:, 1]
 
         # prepare labels and map from 0 to 20(40)
@@ -660,21 +670,25 @@ class SemanticSegmentationDataset(Dataset):
         features = color
         if self.add_normals:
             features = np.hstack((features, normals))
+
         if self.add_raw_coordinates:
             if len(features.shape) == 1:
                 features = np.hstack((features[None, ...], coordinates))
             else:
                 features = np.hstack((features, coordinates))
 
+        # Sanity check
         if "train" in self.mode and np.unique(labels[:, -2]).shape[0] < 2:
             print("NO INSTANCES")
             return self.__getitem__(randrange(len(self.data)))
+        
         if not self.use_color:
             features[:, :3] = 1.0  # make sure no color information is leaked
+        
         return (
             coordinates,
             features,
-            labels,
+            labels, # HERE. WHERE IS THIS COMING FROM
             self.data[idx]["scene"],
             raw_color,
             raw_normals,
@@ -725,7 +739,7 @@ class SemanticSegmentationDataset(Dataset):
             return valid_labels
         else:
             msg = f"""not available number labels, select from:
-            {number_of_validation_labels}, {number_of_all_labels}"""
+            {number_of_validation_labels}, {number_of_all_labels}. Got: {num_labels}"""
             raise ValueError(msg)
 
     def _remap_from_zero(self, labels):

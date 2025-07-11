@@ -470,7 +470,7 @@ class InstanceSegmentation(pl.LightningModule):
     ):
         import open3d
 
-        print(file_name)
+        print(f'{target_full=}')
         export_files = False
         threshold = 0.5
 
@@ -801,13 +801,17 @@ class InstanceSegmentation(pl.LightningModule):
                 print(f"target: {target}")
                 print(f"filenames: {file_names}")
                 raise val_err
-
+            
+            except Exception as e:
+                print(f"Error: {e}")
+                losses = {}
             for k in list(losses.keys()):
                 if k in self.criterion.weight_dict:
                     losses[k] *= self.criterion.weight_dict[k]
                 else:
                     # remove this loss if not specified in `weight_dict`
                     losses.pop(k)
+
             if self.config.trainer.deterministic:
                 torch.use_deterministic_algorithms(True)
 
@@ -862,7 +866,7 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
 
-        if self.config.data.test_mode != "test":
+        if self.config.data.test_mode != "test" and False:
             return {
                 f"val_{k}": v.detach().cpu().item() for k, v in losses.items()
             }
@@ -902,7 +906,7 @@ class InstanceSegmentation(pl.LightningModule):
 
         scores_per_query, labels_per_query = mask_cls.max(dim=1)
 
-        result_pred_mask = (mask_pred > 0).float()
+        result_pred_mask = (mask_pred > 0).float() # THRESHOLD HERE!
         heatmap = mask_pred.float().sigmoid()
 
         mask_scores_per_image = (heatmap * result_pred_mask).sum(0) / (
@@ -2023,7 +2027,7 @@ class InstanceSegmentation(pl.LightningModule):
         self.bbox_preds = dict()
         self.bbox_gt = dict()
 
-    def test_epoch_end(self, outputs):
+    def test_epoch_end_DISABLED(self, outputs):
         if self.config.general.export:
             return
 
@@ -2098,3 +2102,90 @@ class InstanceSegmentation(pl.LightningModule):
             self.test_dataset,
             collate_fn=c_fn,
         )
+
+    def visualize_forward_pass(self, batch, file_name):
+        """
+        Perform a forward pass through the model and visualize the results.
+        Saves the visualization as a point cloud.
+        """
+        data, target, clip_feat, clip_pos, _ = batch
+        inverse_maps = data.inverse_maps
+        original_colors = data.original_colors
+        original_normals = data.original_normals
+        original_coordinates = data.original_coordinates
+
+        raw_coordinates = None
+        if self.config.data.add_raw_coordinates:
+            raw_coordinates = data.features[:, -3:]
+            data.features = data.features[:, :-3]
+
+        data = ME.SparseTensor(
+            coordinates=data.coordinates,
+            features=data.features,
+            device=self.device,
+        )
+
+        try:
+            output = self.forward(
+                data,
+                point2segment=[
+                    target[i]["point2segment"] for i in range(len(target))
+                ],
+                raw_coordinates=raw_coordinates,
+                is_eval=True,
+                clip_feat=clip_feat,
+                clip_pos=clip_pos,
+            )
+        except RuntimeError as run_err:
+            print(run_err)
+            if (
+                "only a single point gives nans in cross-attention"
+                == run_err.args[0]
+            ):
+                return None
+            else:
+                raise run_err
+
+        # Visualization logic
+        if self.config.general.save_visualizations:
+            backbone_features = (
+                output["backbone_features"].F.detach().cpu().numpy()
+            )
+            from sklearn import decomposition
+
+            pca = decomposition.PCA(n_components=3)
+            pca.fit(backbone_features)
+            pca_features = pca.transform(backbone_features)
+            rescaled_pca = (
+                255
+                * (pca_features - pca_features.min())
+                / (pca_features.max() - pca_features.min())
+            )
+
+            self.save_visualizations2(
+                target_full=None,  # No target data for visualization
+                full_res_coords=original_coordinates,
+                sorted_masks=[
+                    {
+                        "parts": output["pred_masks"][0][:, self.config.model.get('model.num_human_queries', 0):],
+                        "human": output["pred_masks"][0][:, :self.config.get('model.num_human_queries', 0)],
+                    }
+                ],
+                sort_classes=[
+                    {
+                        "parts": torch.argmax(output["pred_part_logits"], dim=-1).detach().cpu().numpy(),
+                        "human": torch.argmax(output["pred_human_logits"], dim=-1).detach().cpu().numpy(),
+                    }
+                ],
+                file_name=file_name,
+                original_colors=original_colors,
+                original_normals=original_normals,
+                sort_scores_values=[
+                    {
+                        "parts": torch.sigmoid(output["pred_part_logits"][0]).detach().cpu().numpy(),
+                        "human": torch.sigmoid(output["pred_human_logits"][0]).detach().cpu().numpy(),
+                    }
+                ],
+                backbone_features=rescaled_pca,
+                point_size=self.config.general.visualization_point_size,
+            )

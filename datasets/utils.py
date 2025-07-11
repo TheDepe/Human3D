@@ -267,7 +267,7 @@ def voxelize(
     for sample in batch:
         idx.append(sample[7])
         original_coordinates.append(sample[6])
-        original_labels.append(sample[2])
+        original_labels.append(sample[2]) # WHERE IS THIS COMING FROM
         full_res_coords.append(sample[0])
         original_colors.append(sample[4])
         original_normals.append(sample[5])
@@ -328,7 +328,6 @@ def voxelize(
             # input_dict["segment2label"].append(input_dict["labels"][i][ret_index][:, :-1])
     else:
         input_dict["segment2label"] = []
-
         if "labels" in input_dict:
             for i in range(len(input_dict["labels"])):
                 # TODO BIGGER CHANGE CHECK!!!
@@ -347,7 +346,6 @@ def voxelize(
 
         target = []
         target_full = []
-
         if len(list_labels[0].shape) == 1:
             for batch_id in range(len(list_labels)):
                 label_ids = list_labels[batch_id].unique()
@@ -393,6 +391,7 @@ def voxelize(
                         filter_out_classes=filter_out_classes,
                         label_offset=label_offset,
                     )
+
                     for i in range(len(target_full)):
                         target_full[i]["point2segment"] = torch.from_numpy(
                             original_labels[i][:, 2]
@@ -485,7 +484,6 @@ def get_instance_masks(
     label_offset=0,
 ):
     target = []
-
     for batch_id in range(len(list_labels)):
         label_ids = []
         full_ids = []

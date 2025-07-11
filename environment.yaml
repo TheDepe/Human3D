@@ -1,6 +1,7 @@
-name: human3d_cuda113
+name: human3d
 channels:
   - anaconda
+  - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
@@ -56,7 +57,7 @@ dependencies:
   - xz=5.2.10=h5eee18b_1
   - zlib=1.2.13=h5eee18b_0
   - zstandard=0.19.0=py310h5eee18b_0
-  - pip
+  - pip<24.1
   - pip:
       - absl-py==1.4.0
       - addict==2.4.0
@@ -171,7 +172,7 @@ dependencies:
       - pytz==2023.3
       - pyviz3d==0.2.28
       - pywavelets==1.4.1
-      - pyyaml==5.4.1
+      - pyyaml
       - pyzmq==25.0.2
       - qudida==0.0.4
       - regex==2023.3.23
