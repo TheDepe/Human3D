@@ -4,7 +4,7 @@ python main.py \
 general.experiment_name="Mask3D_horse_eval" \
 general.project_name="mask3d_horse_seg" \
 data/datasets=synthetic_horses \
-general.num_targets=1 \
+general.num_targets=3 \
 data.num_labels=2 \
 model=mask3d \
 loss=set_criterion \
@@ -21,6 +21,6 @@ data.part2human=true \
 loss.num_classes=2 \
 model.num_classes=2 \
 callbacks=callbacks_instance_segmentation_horse \
-general.checkpoint="checkpoints/horse_mask.ckpt" \
+general.checkpoint="checkpoints/mask3d.ckpt" \
 general.train_mode=false \
-general.save_visualizations=true
++general.evaluate=false # set to false in order to just run test

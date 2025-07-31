@@ -76,7 +76,7 @@ test_dataset:
   _target_: datasets.semseg.SemanticSegmentationDataset
   dataset_name: "human_segmentation"
   data_dir:
-  - /ssd-disk/data_ssd/pcd_data
+  - ./data/horse/processed
   image_augmentations_path: null
   volume_augmentations_path: null
   label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml

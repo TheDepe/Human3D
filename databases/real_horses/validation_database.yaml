@@ -1,0 +1,7 @@
+- filepath: data/hum3d_horse_human.npy
+  raw_filepath: "/ssd-disk/data_ssd/VAREN/Random Raw Data/hum3d_horse_human.ply"
+  scene: scene1
+
+- filepath: data/hum3d_horse_human.npy
+  raw_filepath: "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0001/H00001_still1.000023_raw_scan.ply"
+  scene: scene1

@@ -231,6 +231,45 @@ class InstanceSegmentation(pl.LightningModule):
             )
         return x
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        data, target, *rest = batch  # adjust unpacking as needed
+        # Run your forward pass
+        data, target, file_names, clip_feat, clip_pos = batch
+        inverse_maps = data.inverse_maps
+        target_full = data.target_full
+        original_colors = data.original_colors
+        data_idx = data.idx
+        original_normals = data.original_normals
+        original_coordinates = data.original_coordinates
+
+        if self.config.data.part2human:
+            for b_id in range(len(target)):
+                target[b_id]["labels"] = target[b_id]["human_labels"]
+                target[b_id]["masks"] = target[b_id]["human_masks"]
+
+                target_full[b_id]["labels"] = target_full[b_id]["human_labels"]
+                target_full[b_id]["masks"] = target_full[b_id]["human_masks"]
+
+        if len(data.coordinates) == 0:
+            return 0.0
+
+        raw_coordinates = None
+        if self.config.data.add_raw_coordinates:
+            raw_coordinates = data.features[:, -3:]
+            data.features = data.features[:, :-3]
+
+        if raw_coordinates.shape[0] == 0:
+            return 0.0
+
+        data = ME.SparseTensor(
+            coordinates=data.coordinates,
+            features=data.features,
+            device=self.device,
+        )
+        output = self.forward(data, is_eval=True)
+        # Return whatever you want as prediction, e.g., masks, logits, or post-processed results
+        return output
+
     def training_step(self, batch, batch_idx):
         data, target, file_names, clip_feat, clip_pos = batch
 
@@ -371,6 +410,170 @@ class InstanceSegmentation(pl.LightningModule):
         sorted_heatmaps=None,
         query_pos=None,
         backbone_features=None,
+    ):  
+        import trimesh
+        full_res_coords -= full_res_coords.mean(axis=0)
+        original_colors[:, :] = 120.0
+
+        #v = vis.Visualizer()
+
+        # v.add_points(
+        #     "Input (no colors)",
+        #     full_res_coords,
+        #     colors=original_colors,
+        #     normals=original_normals,
+        #     visible=True,
+        #     point_size=point_size,
+        # )
+
+        scene = file_name.replace("_labels", "")
+        out_path = Path(f"{self.config['general']['save_dir']}/visualizations/")
+
+
+        # Create the (new or original) folder
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        if backbone_features is not None:
+            backbone_features = np.array(backbone_features)
+
+            # Normalize to [0, 1] if values aren't already in [0, 255]
+            # You can either normalize manually or clamp to 255
+            max_val = backbone_features.max()
+            if max_val <= 255:
+                backbone_features = (backbone_features / max_val) * 255
+
+            # Clip just in case and convert to uint8
+            backbone_features = np.clip(backbone_features, 0, 255).astype(np.uint8)
+            print(f"DEBUG || {backbone_features.shape=}")
+            pcd = trimesh.points.PointCloud(vertices=full_res_coords, colors=backbone_features)
+            pcd.export(out_path / f"{scene}_features.ply")
+            # v.add_points(
+            #     "PCA",
+            #     full_res_coords,
+            #     colors=backbone_features,
+            #     normals=original_normals,
+            #     visible=False,
+            #     point_size=point_size,
+            # )
+            
+
+        # Lists to accumulate predicted data from valid masks
+        pred_coords = []
+        pred_normals = []
+        pred_sem_color = []
+        pred_inst_color = []
+
+        # Iterate over all detected instances (per scene or input)
+        for did in range(len(sorted_masks)):
+            print(f"{np.unique(sorted_masks[did])=}")
+            # Loop over each predicted mask instance for this scene
+            for i in reversed(range(sorted_masks[did].shape[1])):
+
+                # Only consider mask if confidence score is above threshold
+                if sort_scores_values[did][i] > 0.5:
+                    # Extract the points corresponding to this mask
+                    mask_coords = full_res_coords[sorted_masks[did][:, i].astype(bool), :]
+                    mask_normals = original_normals[sorted_masks[did][:, i].astype(bool), :]
+
+                    label = sort_classes[did][i]
+
+                    # If no points in mask, skip
+                    if len(mask_coords) == 0:
+                        continue
+
+                    # Store coordinates and normals of this mask
+                    pred_coords.append(mask_coords)
+                    pred_normals.append(mask_normals)
+
+                    # Map semantic label to RGB color, repeat for each point in mask
+                    pred_sem_color.append(
+                        self.validation_dataset.map2color([label]).repeat(mask_coords.shape[0], 1)
+                    )
+
+                    # Instance color: assign unique color per instance (i + 1 for instance index)
+                    pred_inst_color.append(
+                        self.validation_dataset.map2color([i + 1])  # +1 to avoid background (0)
+                        .detach()
+                        .cpu()
+                        .unsqueeze(0)
+                        .numpy()
+                        .repeat(mask_coords.shape[0], 1)  # Repeat color for each point in mask
+                    )
+
+            # Only process and export if we collected any instance points
+            if len(pred_coords) > 0:
+                # Stack all points and their data into arrays
+                pred_coords = np.concatenate(pred_coords)
+                pred_normals = np.concatenate(pred_normals)
+                pred_sem_color = np.concatenate(pred_sem_color)
+                pred_inst_color = np.hstack(pred_inst_color)[0]  # [0] removes batch dim
+
+                # Normalize to 0–255 if not already
+                max_val = pred_inst_color.max()
+                if max_val <= 255:
+                    pred_inst_color = (pred_inst_color / max_val) * 255
+
+                # Clamp values and convert to uint8
+                pred_inst_color = np.clip(pred_inst_color, 0, 255).astype(np.uint8)
+
+                print(f"DEBUG || {pred_inst_color.shape=}")
+
+                # Export predicted instance-colored point cloud
+                pcd = trimesh.points.PointCloud(vertices=pred_coords, colors=pred_inst_color)
+                pcd.export(out_path / f"{scene}_pred.ply")
+
+                # Optional visualization code (commented out)
+                # v.add_points(
+                #     "Instances (Mask3D)",
+                #     pred_coords,
+                #     colors=pred_inst_color,
+                #     normals=pred_normals,
+                #     visible=True,
+                #     alpha=1.0,
+                #     point_size=point_size,
+                # )
+        # Initialize full array with default color (e.g., gray for unmasked)
+        default_color = np.array([128, 128, 128], dtype=np.uint8)
+        full_inst_colors = np.tile(default_color, (full_res_coords.shape[0], 1))
+
+        # Loop through masks as before
+        for did in range(len(sorted_masks)):
+            for i in reversed(range(sorted_masks[did].shape[1])):
+                print(f"DEBUG || Checking if true {sort_scores_values[did][i] > 0.5}")
+                if sort_scores_values[did][i] > 0.5:
+                    mask = sorted_masks[did][:, i].astype(bool)
+                    color = (
+                        self.validation_dataset.map2color([i + 1])  # i+1 for instance index
+                        .detach()
+                        .cpu()
+                        .numpy()[0]
+                    )
+                    color = (color / color.max()) * 255  # Normalize to 0–255
+                    color = np.clip(color, 0, 255).astype(np.uint8)
+                    full_inst_colors[mask] = color  # Apply color to mask locations
+
+        # Save full mesh colored by instance masks
+        print(f"DEBUG || {np.unique(full_inst_colors)=} {full_res_coords.shape=}")
+        pcd_full = trimesh.points.PointCloud(vertices=full_res_coords, colors=full_inst_colors)
+        pcd_full.export(out_path / f"{scene}_full_instance_colored.ply")
+        # Optional visualization saving
+        # v.save(f"{self.config['general']['save_dir']}/visualizations/{file_name}")
+
+
+    def save_visualizations_BU(
+        self,
+        target_full,
+        full_res_coords,
+        sorted_masks,
+        sort_classes,
+        file_name,
+        original_colors,
+        original_normals,
+        sort_scores_values,
+        point_size=20,
+        sorted_heatmaps=None,
+        query_pos=None,
+        backbone_features=None,
     ):
 
         full_res_coords -= full_res_coords.mean(axis=0)
@@ -441,6 +644,7 @@ class InstanceSegmentation(pl.LightningModule):
                 pred_sem_color = np.concatenate(pred_sem_color)
                 pred_inst_color = np.hstack(pred_inst_color)[0]
 
+                print(f"DEBUG || {pred_inst_color.shape} {pred_coords.shape}")
                 v.add_points(
                     "Instances (Mask3D)",
                     pred_coords,
@@ -455,277 +659,7 @@ class InstanceSegmentation(pl.LightningModule):
             f"{self.config['general']['save_dir']}/visualizations/{file_name}"
         )
 
-    def save_visualizations2(
-        self,
-        target_full,
-        full_res_coords,
-        sorted_masks,
-        sort_classes,
-        file_name,
-        original_colors,
-        original_normals,
-        sort_scores_values,
-        point_size=20,
-        backbone_features=None,
-    ):
-        import open3d
 
-        print(f'{target_full=}')
-        export_files = False
-        threshold = 0.5
-
-        full_res_coords -= full_res_coords.mean(axis=0)
-
-        if not os.path.exists(
-            f"{self.config['general']['save_dir']}/export/{file_name}"
-        ):
-            os.makedirs(
-                f"{self.config['general']['save_dir']}/export/{file_name}"
-            )
-
-        v = vis.Visualizer()
-
-        original_colors[:, :] = 120.0
-
-        v.add_points(
-            "Input (no colors)",
-            full_res_coords,
-            colors=original_colors,
-            normals=original_normals,
-            visible=True,
-            point_size=point_size,
-        )
-
-        if backbone_features is not None:
-            v.add_points(
-                "PCA",
-                full_res_coords,
-                colors=backbone_features,
-                normals=original_normals,
-                visible=False,
-                point_size=point_size,
-            )
-
-        humans = {
-            k.item(): {"pos": [], "color": [], "part_color": [], "normals": []}
-            for k in torch.unique(target_full["full_ids"] % 1000)
-        }
-
-        target_output = np.ones_like(full_res_coords, dtype=np.int16) * 226
-        target_human = np.ones_like(full_res_coords, dtype=np.int16) * 226
-
-        pcd_output = open3d.geometry.PointCloud()
-        pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-        pcd_output.colors = open3d.utility.Vector3dVector(target_human / 255.0)
-        pcd_output.normals = open3d.utility.Vector3dVector(original_normals)
-
-        if export_files:
-            open3d.io.write_point_cloud(
-                f"{self.config['general']['save_dir']}/export/{file_name}/raw.ply",
-                pcd_output,
-            )
-
-        pcd_output = open3d.geometry.PointCloud()
-        pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-        pcd_output.colors = open3d.utility.Vector3dVector(
-            original_colors / 255.0
-        )
-        pcd_output.normals = open3d.utility.Vector3dVector(original_normals)
-
-        if export_files:
-            open3d.io.write_point_cloud(
-                f"{self.config['general']['save_dir']}/export/{file_name}/raw.ply",
-                pcd_output,
-            )
-
-        if "labels" in target_full:
-            instances_colors = torch.from_numpy(
-                np.vstack(
-                    get_evenly_distributed_colors(
-                        target_full["labels"].shape[0]
-                    )
-                )
-            )
-            for instance_counter, (label, mask, full_id) in enumerate(
-                zip(
-                    target_full["labels"],
-                    target_full["masks"],
-                    target_full["full_ids"],
-                )
-            ):
-                if label == 255:
-                    continue
-
-                human_id = (full_id % 1000).item()
-                human_part = (full_id // 1000).item()
-
-                mask_tmp = mask.detach().cpu().numpy()
-                mask_coords = full_res_coords[mask_tmp.astype(bool), :]
-
-                if len(mask_coords) == 0:
-                    continue
-
-                humans[human_id]["pos"].append(mask_coords)
-
-                humans[human_id]["color"].append(
-                    self.validation_dataset.map2color([human_part]).repeat(
-                        humans[human_id]["pos"][-1].shape[0], 1
-                    )
-                )
-                humans[human_id]["part_color"].append(
-                    instances_colors[instance_counter % len(instances_colors)]
-                    .unsqueeze(0)
-                    .repeat(humans[human_id]["pos"][-1].shape[0], 1)
-                )
-
-                humans[human_id]["normals"].append(
-                    original_normals[mask_tmp.astype(bool), :]
-                )
-
-                target_output[mask_tmp] = self.validation_dataset.map2color(
-                    [human_part]
-                ).repeat(humans[human_id]["pos"][-1].shape[0], 1)
-                target_human[mask_tmp] = self.validation_dataset.map2color(
-                    [human_id]
-                ).repeat(humans[human_id]["pos"][-1].shape[0], 1)
-
-            pcd_output = open3d.geometry.PointCloud()
-            pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-            pcd_output.colors = open3d.utility.Vector3dVector(
-                target_output / 255.0
-            )
-            pcd_output.normals = open3d.utility.Vector3dVector(
-                original_normals
-            )
-
-            open3d.io.write_point_cloud(
-                f"{self.config['general']['save_dir']}/export/{file_name}/targets_mhbps.ply",
-                pcd_output,
-            )
-
-            pcd_output = open3d.geometry.PointCloud()
-            pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-            pcd_output.colors = open3d.utility.Vector3dVector(
-                target_human / 255.0
-            )
-            pcd_output.normals = open3d.utility.Vector3dVector(
-                original_normals
-            )
-
-            if export_files:
-                open3d.io.write_point_cloud(
-                    f"{self.config['general']['save_dir']}/export/{file_name}/targets_human_instance.ply",
-                    pcd_output,
-                )
-
-            for human_id, human_prop in humans.items():
-                pos = np.concatenate(human_prop["pos"])
-                # part_color = np.concatenate(human_prop['part_color'])
-                color = np.concatenate(humans[human_id]["color"])
-                normals = np.concatenate(human_prop["normals"])
-
-                v.add_points(
-                    f"{human_id}_target",
-                    pos,
-                    colors=color,
-                    # colors=part_color,
-                    normals=normals,
-                    alpha=0.8,
-                    visible=False,
-                    point_size=point_size,
-                )
-
-        pred_output = np.ones_like(full_res_coords, dtype=np.int16) * 226
-        pred_human = np.ones_like(full_res_coords, dtype=np.int16) * 226
-
-        for did in range(len(sorted_masks)):
-            for i in range(sorted_masks[did]["human"].shape[1]):
-                human_mask = sorted_masks[did]["human"][:, i].astype(bool)
-
-                if sort_scores_values[did]["human"][i] > threshold:
-                    pred_human[human_mask] = (
-                        self.validation_dataset.map2color([i + 1])
-                        .detach()
-                        .cpu()
-                        .numpy()
-                    )
-
-                parts_mask = sorted_masks[did]["parts"][
-                    :, range(i, 80, 5)
-                ].astype(bool)
-                restricted_mask = np.logical_and(
-                    human_mask[..., None], parts_mask
-                )
-
-                part_classes = sort_classes[did]["parts"][range(i, 80, 5)]
-                parts_scores = sort_scores_values[did]["parts"][
-                    range(i, 80, 5)
-                ]
-
-                part_semseg = np.zeros(
-                    restricted_mask.shape[0], dtype=np.int64
-                )
-
-                score_values, score_indx = parts_scores.sort()
-                for score_index, score_value in zip(score_indx, score_values):
-                    if score_value < 0.1:
-                        continue
-
-                    part_semseg[
-                        restricted_mask[:, score_index]
-                    ] = part_classes[score_index]
-
-                if (part_semseg > 0).sum() > 0:
-                    v.add_points(
-                        f"{i}_pred_mhbps_score_{sort_scores_values[did]['human'][i].item():.2f}",
-                        full_res_coords[part_semseg > 0],
-                        visible=sort_scores_values[did]["human"][i].item()
-                        > 0.01,
-                        alpha=1.0,
-                        normals=original_normals[part_semseg > 0, :],
-                        colors=self.validation_dataset.map2color(
-                            part_semseg[part_semseg > 0]
-                        )
-                        .detach()
-                        .cpu()
-                        .numpy(),
-                        point_size=point_size,
-                    )
-
-                    if sort_scores_values[did]["human"][i] > threshold:
-                        pred_output[part_semseg > 0] = (
-                            self.validation_dataset.map2color(
-                                part_semseg[part_semseg > 0]
-                            )
-                            .detach()
-                            .cpu()
-                            .numpy()
-                        )
-
-        pcd_output = open3d.geometry.PointCloud()
-        pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-        pcd_output.colors = open3d.utility.Vector3dVector(pred_output / 255.0)
-        pcd_output.normals = open3d.utility.Vector3dVector(original_normals)
-
-        if export_files:
-            open3d.io.write_point_cloud(
-                f"{self.config['general']['save_dir']}/export/{file_name}/predictions_mhbps.ply",
-                pcd_output,
-            )
-
-        pcd_output = open3d.geometry.PointCloud()
-        pcd_output.points = open3d.utility.Vector3dVector(full_res_coords)
-        pcd_output.colors = open3d.utility.Vector3dVector(pred_human / 255.0)
-        pcd_output.normals = open3d.utility.Vector3dVector(original_normals)
-
-        if export_files:
-            open3d.io.write_point_cloud(
-                f"{self.config['general']['save_dir']}/export/{file_name}/predictions_human_instance.ply",
-                pcd_output,
-            )
-        v.save(
-            f"{self.config['general']['save_dir']}/visualizations/{file_name}"
-        )
 
     def eval_step(self, batch, batch_idx):
         data, target, file_names, clip_feat, clip_pos = batch
@@ -850,6 +784,7 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
         else:
+            print(f"DEBUG || DPOING THIS STEP")
             self.eval_instance_step(
                 output,
                 target,
@@ -866,12 +801,7 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
 
-        if self.config.data.test_mode != "test" and False:
-            return {
-                f"val_{k}": v.detach().cpu().item() for k, v in losses.items()
-            }
-        else:
-            return 0.0
+
 
     def test_step(self, batch, batch_idx):
         return self.eval_step(batch, batch_idx)
@@ -1467,6 +1397,7 @@ class InstanceSegmentation(pl.LightningModule):
 
             if self.config.general.save_visualizations:
                 if "cond_inner" in self.test_dataset.data[idx[bid]]:
+                    print("JERE FOR SOME REONS")
                     target_full_res[bid]["masks"] = target_full_res[bid][
                         "masks"
                     ][:, self.test_dataset.data[idx[bid]]["cond_inner"]]
@@ -1501,6 +1432,7 @@ class InstanceSegmentation(pl.LightningModule):
                         point_size=self.config.general.visualization_point_size,
                     )
                 else:
+                    print(f"DEBUG || I AM HERE NOW <--------------------------------------------------")
                     self.save_visualizations(
                         target_full_res[bid],
                         full_res_coords[bid],

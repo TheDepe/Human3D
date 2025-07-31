@@ -102,7 +102,7 @@ def test(cfg: DictConfig):
 @hydra.main(
     config_path="conf", config_name="config_base_instance_segmentation.yaml"
 )
-def vis(cfg: DictConfig):
+def evaluate(cfg: DictConfig):
     # because hydra wants to change dir for some reason
     os.chdir(hydra.utils.get_original_cwd())
     cfg, model, loggers = get_parameters(cfg)
@@ -112,17 +112,8 @@ def vis(cfg: DictConfig):
         weights_save_path=str(cfg.general.save_dir),
         **cfg.trainer,
     )
-    model.prepare_data()
-    loader = model.test_dataloader()
-    batch = next(iter(loader))
-    model.eval()  # disable dropout, etc.
-
-    import torch
-    with torch.no_grad():
-        file_name = "visualization_result"  # Specify the output file name
-        model.visualize_forward_pass(batch, file_name)
-
-    print("Visualization finished")
+    runner.validate(model)
+    print("TEST FINISHED")
 
 @hydra.main(
     config_path="conf", config_name="config_base_instance_segmentation.yaml"
@@ -131,8 +122,9 @@ def vis(cfg: DictConfig):
 def main(cfg: DictConfig):
     if cfg["general"]["train_mode"]:
         train(cfg)
-    elif cfg["general"].get("vis_only", False):
-        vis(cfg)
+    elif cfg["general"].get("evaluate", False):
+        print("DOING EVAL")
+        evaluate(cfg)
     else:
         print("DOING TEST")
         test(cfg)
