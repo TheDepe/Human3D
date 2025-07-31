@@ -16,10 +16,10 @@ config:
     export: false
     use_dbscan: false
     ignore_class_threshold: 100
-    project_name: mask3d_humanseg
+    project_name: mask3d_horse_seg
     workspace: jonasschult
-    experiment_name: Mask3D_eval
-    num_targets: 16
+    experiment_name: Mask3D_horse_eval
+    num_targets: 3
     add_instance: true
     dbscan_eps: 0.95
     dbscan_min_points: 1
@@ -35,8 +35,9 @@ config:
     topk_per_image: -1
     ignore_mask_idx: []
     max_batch_size: 99999999
-    save_dir: saved/Mask3D_eval
+    save_dir: saved/Mask3D_horse_eval
     gpus: 1
+    evaluate: false
   data:
     train_mode: train
     validation_mode: validation
@@ -47,7 +48,7 @@ config:
     add_colors: true
     add_normals: false
     in_channels: 3
-    num_labels: 16
+    num_labels: 2
     add_instance: true
     task: instance_segmentation
     add_clip: false
@@ -90,15 +91,16 @@ config:
     train_dataset:
       _target_: datasets.semseg.SemanticSegmentationDataset
       dataset_name: human_segmentation
-      data_dir: data/processed/egobody
+      data_dir:
+      - /ssd-disk/data_ssd/pcd_data
       image_augmentations_path: conf/augmentation/albumentations_aug.yaml
       volume_augmentations_path: conf/augmentation/volumentations_aug.yaml
-      label_db_filepath: data/processed/egobody/part_database.yaml
-      color_mean_std: data/processed/egobody/color_mean_std.yaml
+      label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
+      color_mean_std: data/processed/synthetic_humans/color_mean_std.yaml
       data_percent: 1.0
       mode: train
       ignore_label: 255
-      num_labels: 16
+      num_labels: 2
       add_raw_coordinates: true
       add_colors: true
       add_normals: false
@@ -129,22 +131,22 @@ config:
       label_offset: 1
       is_elastic_distortion: true
       color_drop: 0.0
-      is_mirroring: true
       part2human: true
+      is_mirroring: true
       broken_mirror_version: false
     validation_dataset:
       _target_: datasets.semseg.SemanticSegmentationDataset
       dataset_name: human_segmentation
       data_dir:
-      - data/processed/egobody
+      - /ssd-disk/data_ssd/pcd_data
       image_augmentations_path: null
       volume_augmentations_path: null
-      label_db_filepath: data/processed/egobody/part_database.yaml
+      label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
       color_mean_std: data/processed/egobody/color_mean_std.yaml
       data_percent: 1.0
       mode: validation
       ignore_label: 255
-      num_labels: 16
+      num_labels: 2
       add_raw_coordinates: true
       add_colors: true
       add_normals: false
@@ -165,15 +167,16 @@ config:
     test_dataset:
       _target_: datasets.semseg.SemanticSegmentationDataset
       dataset_name: human_segmentation
-      data_dir: data/processed/egobody
+      data_dir:
+      - ./data/horse/processed
       image_augmentations_path: null
       volume_augmentations_path: null
-      label_db_filepath: data/processed/egobody/part_database.yaml
+      label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
       color_mean_std: data/processed/egobody/color_mean_std.yaml
       data_percent: 1.0
       mode: validation
       ignore_label: 255
-      num_labels: 16
+      num_labels: 2
       add_raw_coordinates: true
       add_colors: true
       add_normals: false
@@ -234,12 +237,12 @@ config:
       num_queries: 0
   logging:
   - _target_: pytorch_lightning.loggers.WandbLogger
-    project: mask3d_humanseg
-    name: Mask3D_eval
-    save_dir: saved/Mask3D_eval
+    project: mask3d_horse_seg
+    name: Mask3D_horse_eval
+    save_dir: saved/Mask3D_horse_eval
     entity: dennis-perrett-mpi-is
     resume: allow
-    id: Mask3D_eval
+    id: Mask3D_horse_eval
   model:
     _target_: models.Mask3D
     hidden_dim: 128
@@ -289,11 +292,11 @@ config:
           conv1_kernel_size: 5
           bn_momentum: 0.02
         in_channels: 3
-        out_channels: 16
+        out_channels: 2
         out_fpn: true
   metrics:
     _target_: models.metrics.ConfusionMatrix
-    num_classes: 16
+    num_classes: 2
     ignore_label: 255
   optimizer:
     _target_: torch.optim.AdamW
@@ -310,16 +313,16 @@ config:
     deterministic: false
     max_epochs: 36
     min_epochs: 1
-    resume_from_checkpoint: saved/Mask3D_eval/last-epoch.ckpt
+    resume_from_checkpoint: saved/Mask3D_horse_eval/last-epoch.ckpt
     check_val_every_n_epoch: 1
     num_sanity_val_steps: -1
   callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
-    monitor: val_AP_50_human
+    monitor: train_loss_mask_0
     save_last: true
     save_top_k: 1
     mode: max
-    dirpath: saved/Mask3D_eval
+    dirpath: saved/Mask3D_horse_eval
     filename: '{epoch}-{val_AP_50_parts:.3f}'
     every_n_epochs: 1
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor

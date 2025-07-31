@@ -29,6 +29,28 @@ We propose the first multi-human body-part segmentation model, called Human3D ðŸ
 
 [[`Project Webpage`](https://human-3d.github.io/)]    [[`Paper`](https://human-3d.github.io/assets/Human3D_paper.pdf)]
 
+## OUR STUFF
+
+
+Run horse_preprocessing.py process with the following pointing to your input data and output data. This wont change anything, but will create the dataset structure needed for this model.
+This SHOULD work when pointed to any dir that contains `*_labels.npy`. However I haven't tested this yet.
+
+
+
+```
+
+data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset",
+save_dir: str = "./data/horse/processed/",
+```
+
+In the `cfg/datasets/synthetic_horses.yaml` you can change data_dir  to your save location from above eg` - ./data/horse/processed`. Currently I have this for the test dataset as this is what is called when we run evaluate. Not sure exactly which is being called when validating during training. Probably the validation dataset.
+
+
+For now, everthing else is the same.
+
+
+--- 
+
 
 ## Code structure
 We adapt the codebase of [Mix3D](https://github.com/kumuji/mix3d) and [Mask3D](https://github.com/kumuji/mix3d) which provides a highly modularized framework for 3D scene understanding tasks based on the MinkowskiEngine.

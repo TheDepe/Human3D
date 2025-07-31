@@ -444,7 +444,6 @@ class InstanceSegmentation(pl.LightningModule):
 
             # Clip just in case and convert to uint8
             backbone_features = np.clip(backbone_features, 0, 255).astype(np.uint8)
-            print(f"DEBUG || {backbone_features.shape=}")
             pcd = trimesh.points.PointCloud(vertices=full_res_coords, colors=backbone_features)
             pcd.export(out_path / f"{scene}_features.ply")
             # v.add_points(
@@ -516,7 +515,6 @@ class InstanceSegmentation(pl.LightningModule):
                 # Clamp values and convert to uint8
                 pred_inst_color = np.clip(pred_inst_color, 0, 255).astype(np.uint8)
 
-                print(f"DEBUG || {pred_inst_color.shape=}")
 
                 # Export predicted instance-colored point cloud
                 pcd = trimesh.points.PointCloud(vertices=pred_coords, colors=pred_inst_color)
@@ -539,7 +537,6 @@ class InstanceSegmentation(pl.LightningModule):
         # Loop through masks as before
         for did in range(len(sorted_masks)):
             for i in reversed(range(sorted_masks[did].shape[1])):
-                print(f"DEBUG || Checking if true {sort_scores_values[did][i] > 0.5}")
                 if sort_scores_values[did][i] > 0.5:
                     mask = sorted_masks[did][:, i].astype(bool)
                     color = (
@@ -553,7 +550,6 @@ class InstanceSegmentation(pl.LightningModule):
                     full_inst_colors[mask] = color  # Apply color to mask locations
 
         # Save full mesh colored by instance masks
-        print(f"DEBUG || {np.unique(full_inst_colors)=} {full_res_coords.shape=}")
         pcd_full = trimesh.points.PointCloud(vertices=full_res_coords, colors=full_inst_colors)
         pcd_full.export(out_path / f"{scene}_full_instance_colored.ply")
         # Optional visualization saving
@@ -1432,7 +1428,6 @@ class InstanceSegmentation(pl.LightningModule):
                         point_size=self.config.general.visualization_point_size,
                     )
                 else:
-                    print(f"DEBUG || I AM HERE NOW <--------------------------------------------------")
                     self.save_visualizations(
                         target_full_res[bid],
                         full_res_coords[bid],
