@@ -80,7 +80,6 @@ class RealHorseSegmentation(BasePreprocessing):
 
     def read_plyfile(self, file_path):
         """Read ply file and return it as numpy array. Returns None if emtpy."""
-        print(file_path)
         with open(file_path, "rb") as f:
             plydata = PlyData.read(f)
         if plydata.elements:
@@ -113,7 +112,6 @@ class RealHorseSegmentation(BasePreprocessing):
         # reading both files and checking that they are fitting
         pcd = self.read_plyfile(str(scan_path))
         coords = pcd[:, :3]
-        print(coords)
         # fix rotation bug (THIS IS NOT A BUG. THIS IS JUST CHANGING THE CONVENTION)
         # FROM WHAT TO WHAT?
         #coords = coords[:, [0, 2, 1]]
@@ -127,7 +125,6 @@ class RealHorseSegmentation(BasePreprocessing):
         part_id = instance_id
     
         # Assemble final dataset [x,y,z,r,b,g, part_id, instance_id] [N, 8]
-        print(f"DEBUG || {coords.shape=} {rgb.shape=} {part_id.shape=} {instance_id.shape=}")
         points = np.hstack((coords, rgb, part_id, instance_id))
 
         # Exclude NANs or infs

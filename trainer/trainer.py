@@ -464,7 +464,6 @@ class InstanceSegmentation(pl.LightningModule):
 
         # Iterate over all detected instances (per scene or input)
         for did in range(len(sorted_masks)):
-            print(f"{np.unique(sorted_masks[did])=}")
             # Loop over each predicted mask instance for this scene
             for i in reversed(range(sorted_masks[did].shape[1])):
 
@@ -640,7 +639,6 @@ class InstanceSegmentation(pl.LightningModule):
                 pred_sem_color = np.concatenate(pred_sem_color)
                 pred_inst_color = np.hstack(pred_inst_color)[0]
 
-                print(f"DEBUG || {pred_inst_color.shape} {pred_coords.shape}")
                 v.add_points(
                     "Instances (Mask3D)",
                     pred_coords,
@@ -780,7 +778,6 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
         else:
-            print(f"DEBUG || DPOING THIS STEP")
             self.eval_instance_step(
                 output,
                 target,
@@ -797,7 +794,12 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
 
-
+        if self.config.data.test_mode != "test":
+            return {
+                f"val_{k}": v.detach().cpu().item() for k, v in losses.items()
+            }
+        else:
+            return 0.0
 
     def test_step(self, batch, batch_idx):
         return self.eval_step(batch, batch_idx)
@@ -1393,7 +1395,6 @@ class InstanceSegmentation(pl.LightningModule):
 
             if self.config.general.save_visualizations:
                 if "cond_inner" in self.test_dataset.data[idx[bid]]:
-                    print("JERE FOR SOME REONS")
                     target_full_res[bid]["masks"] = target_full_res[bid][
                         "masks"
                     ][:, self.test_dataset.data[idx[bid]]["cond_inner"]]
@@ -1868,9 +1869,6 @@ class InstanceSegmentation(pl.LightningModule):
                         part_iou.mean()
                     )
 
-                print("EVALUATION RESULTS")
-                print(ap_results)
-
                 self.log_dict(ap_results)
 
                 if not self.config.general.export:
@@ -1954,7 +1952,7 @@ class InstanceSegmentation(pl.LightningModule):
         self.bbox_preds = dict()
         self.bbox_gt = dict()
 
-    def test_epoch_end_DISABLED(self, outputs):
+    def test_epoch_end(self, outputs):
         if self.config.general.export:
             return
 
