@@ -12,13 +12,14 @@ from tqdm import tqdm
 from plyfile import PlyData
 import pandas as pd
 from base_preprocessing import BasePreprocessing
+import random
 
 class RealHorseSegmentation(BasePreprocessing):
     def __init__(
         self,
         data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset",
         save_dir: str = "./data/horse/processed/",
-        modes: tuple = ["validation","train","test"],
+        modes: tuple = ("validation", "train", "test"),
         n_jobs: int = -1,
     ):
         self.data_dir = Path(data_dir)
@@ -27,17 +28,45 @@ class RealHorseSegmentation(BasePreprocessing):
         self.modes = modes
 
         if not self.data_dir.exists():
-            logger.error("data folder doesn't exist")
+            logger.error("Data folder doesn't exist")
             raise FileNotFoundError(f"{self.data_dir} <-")
-        if self.save_dir.exists() is False:
+        if not self.save_dir.exists():
             self.save_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        all_label_paths = list(self.data_dir.rglob("*_labels.npy"))
+        if not all_label_paths:
+            raise ValueError(f"No label files found in {self.data_dir}")
+
+        # Shuffle once
+        random.seed(42)
+        random.shuffle(all_label_paths)
+
         self.files = {}
-        for mode in self.modes:
-            self.files[mode] = []
-            for label_path in self.data_dir.rglob("*_labels.npy"):
-                self.files[mode].append(label_path)
-        
+
+        n = len(all_label_paths)
+
+        if set(modes) == {"train"}:
+            self.files["train"] = all_label_paths
+
+        elif set(modes) == {"train", "validation"}:
+            split_idx = int(n * 0.9)
+            self.files["train"] = all_label_paths[:split_idx]
+            self.files["validation"] = all_label_paths[split_idx:]
+
+        elif set(modes) == {"train", "test"}:
+            split_idx = int(n * 0.9)
+            self.files["train"] = all_label_paths[:split_idx]
+            self.files["test"] = all_label_paths[split_idx:]
+
+        elif set(modes) == {"train", "validation", "test"}:
+            n_test = int(n * 0.1)
+            n_val = int(n * 0.1)
+            self.files["test"] = all_label_paths[:n_test]
+            self.files["validation"] = all_label_paths[n_test:n_test + n_val]
+            self.files["train"] = all_label_paths[n_test + n_val:]
+
+        else:
+            raise ValueError(f"Unsupported mode combination: {modes}")
 
     @logger.catch
     def preprocess(self):
