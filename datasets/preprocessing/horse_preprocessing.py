@@ -17,7 +17,7 @@ import random
 class RealHorseSegmentation(BasePreprocessing):
     def __init__(
         self,
-        data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset",
+        data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset (Copy)",
         save_dir: str = "./data/horse/processed/",
         modes: tuple = ("validation", "train", "test"),
         n_jobs: int = -1,
