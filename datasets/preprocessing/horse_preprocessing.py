@@ -128,7 +128,7 @@ class RealHorseSegmentation(BasePreprocessing):
         """
 
         # Extracting scene name from filepath
-        scene_name = filepath.stem
+        scene_name = filepath.stem.replace("cleaned_scan_fit", "")
         labels_path = filepath
         scan_path = Path(str(labels_path).replace("labels.npy","raw_scan.ply"))
         filebase = {
@@ -148,13 +148,21 @@ class RealHorseSegmentation(BasePreprocessing):
 
         # Extract channels
         rgb = np.ones_like(pcd)
-        instance_id = np.load(labels_path)[..., None]
+        labels = np.load(labels_path)
+        if labels.ndim == 1:
+            labels = labels[:, np.newaxis]
+            # duplicate the part labels as instance labels.
+            labels[:, 1] = labels[:, 0]
 
-        # Remap part indices (dataset parts -> model parts)
-        part_id = instance_id
+        part_id = labels[:, [0]]  # part id
+        instance_id = labels[:, [1]]  # instance id
     
         # Assemble final dataset [x,y,z,r,b,g, part_id, instance_id] [N, 8]
         points = np.hstack((coords, rgb, part_id, instance_id))
+        
+
+        # Remap part indices (dataset parts -> model parts)
+        
 
         # Exclude NANs or infs
         if np.isinf(points).sum() > 0:
