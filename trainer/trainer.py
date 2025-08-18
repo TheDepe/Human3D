@@ -351,11 +351,12 @@ class InstanceSegmentation(pl.LightningModule):
         train_loss = sum([out["loss"].cpu().item() for out in outputs]) / len(
             outputs
         )
-        results = {"train_loss_mean": train_loss}
+        results = {"train_loss_mean": train_loss, "val_AP_50_parts":0.1} #Required to make it work for Parts 
         self.log_dict(results)
 
     def validation_epoch_end(self, outputs):
         self.test_epoch_end(outputs)
+    
 
     def save_visualizations(
         self,

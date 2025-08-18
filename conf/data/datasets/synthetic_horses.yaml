@@ -3,10 +3,10 @@ train_dataset:
   _target_: datasets.semseg.SemanticSegmentationDataset
   dataset_name: "human_segmentation"
   data_dir:
-  - /ssd-disk/data_ssd/pcd_data
+  - /oslab-data-4tb/Documents/test_data 
   image_augmentations_path: conf/augmentation/albumentations_aug.yaml
   volume_augmentations_path: conf/augmentation/volumentations_aug.yaml
-  label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
+  label_db_filepath: /oslab-data-4tb/yaml/part_database.yaml
   color_mean_std: data/processed/synthetic_humans/color_mean_std.yaml
   data_percent: 1.0
   mode: ${data.train_mode}
@@ -46,10 +46,10 @@ validation_dataset:
   _target_: datasets.semseg.SemanticSegmentationDataset
   dataset_name: "human_segmentation"
   data_dir:
-  - /ssd-disk/data_ssd/pcd_data
+  - /oslab-data-4tb/Documents/test_data
   image_augmentations_path: null
   volume_augmentations_path: null
-  label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
+  label_db_filepath: /oslab-data-4tb/yaml/part_database.yaml
   color_mean_std: data/processed/egobody/color_mean_std.yaml
   data_percent: 1.0
   mode: ${data.validation_mode}
@@ -76,10 +76,10 @@ test_dataset:
   _target_: datasets.semseg.SemanticSegmentationDataset
   dataset_name: "human_segmentation"
   data_dir:
-  - /ssd-disk/data_ssd/pcd_data
+  - /oslab-data-4tb/Documents/test_data
   image_augmentations_path: null
   volume_augmentations_path: null
-  label_db_filepath: /ssd-disk/data_ssd/pcd_data/part_database.yaml
+  label_db_filepath: /oslab-data-4tb/yaml/part_database.yaml
   color_mean_std: data/processed/egobody/color_mean_std.yaml
   data_percent: 1.0
   mode: ${data.test_mode}
