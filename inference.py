@@ -4,7 +4,6 @@ import trimesh
 import numpy as np
 import albumentations as A
 import MinkowskiEngine as ME
-from trimesh.transformations import rotation_matrix
 
 from utils.utils import (
     load_checkpoint_with_missing_or_exsessive_keys,
@@ -42,11 +41,14 @@ def get_model(checkpoint_path=None):
     with initialize(config_path="conf"):
         cfg = compose(config_name="config_base_instance_segmentation.yaml")
 
+        
     cfg.general.checkpoint = checkpoint_path
     cfg.general.experiment_name = "Human3D_eval"
     cfg.general.project_name = "human3d"
     cfg.general.num_targets = 3
     cfg.data.num_labels = 2
+    cfg.model.num_classes = 2
+    cfg.model.num_queries = 1
     cfg.trainer.check_val_every_n_epoch = 1
     cfg.general.topk_per_image = -1
     cfg.model.non_parametric_queries = False
@@ -70,25 +72,10 @@ def get_model(checkpoint_path=None):
     return model
 
 
-def load_mesh(pcl_file, rotate=False, scale=False):
+def load_mesh(pcl_file):
     """Load mesh with Trimesh"""
     mesh = trimesh.load(pcl_file, process=False)
-    # Rotate X by 90 degrees
-    if rotate:
-        angle_x = np.radians(90)
-        R_x = rotation_matrix(angle_x, [1, 0, 0])  # rotation about X
-        mesh.apply_transform(R_x)
-
-        # Rotate Z by 90 degrees
-        angle_z = np.radians(90)
-        R_z = rotation_matrix(angle_z, [0, 0, 1])  # rotation about Z
-        mesh.apply_transform(R_z)
-
-    if scale:
-        mesh.vertices *= 1/1000
     points = mesh.vertices
-
-
     # If no vertex colors, assign white
     if hasattr(mesh.visual, "vertex_colors") and len(mesh.visual.vertex_colors) > 0:
         colors = mesh.visual.vertex_colors[:, :3]  # drop alpha if present
@@ -156,7 +143,7 @@ def map_output_to_pointcloud(mesh, outputs, inverse_map, confidence_threshold=0.
 def save_colorized_mesh(mesh, labels_mapped, output_file):
     color_map = {
         0: [255, 255, 255],  # background
-        1: [255, 0, 0],      # horse
+        1: [255, 0, 0],      # human
     }
 
     colors = np.zeros((len(mesh.vertices), 3))
@@ -176,9 +163,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    pointcloud_file = "./data/H0022_still1.000003.obj"
-    pointcloud_file = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0026/H00026_still1.000004_raw_scan.ply"
-    mesh, points, colors = load_mesh(pointcloud_file, rotate=False, scale=False)
+    pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/saved/Mask3D_horse_big_run_eval/visualizations/H0175_still1.000023_full_instance_colored.ply"
+    mesh, points, colors = load_mesh(pointcloud_file)
 
     data, coords, features, unique_map, inverse_map = prepare_data(points, colors, device)
 
@@ -186,4 +172,6 @@ if __name__ == "__main__":
         outputs = model(data, raw_coordinates=features)
 
     labels = map_output_to_pointcloud(mesh, outputs, inverse_map, confidence_threshold=0.5)
+    if len(np.unique(labels)) == 1:
+        print("probably something went wrong. Detected no labels.")
     save_colorized_mesh(mesh, labels, "data/pcl_labelled_trimesh.ply")
