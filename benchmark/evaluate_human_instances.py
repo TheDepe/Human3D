@@ -237,6 +237,44 @@ def assign_instances_for_scan(pred: dict, gt_file: str):
     gt_instances = util_3d.get_instances(
         gt_ids, VALID_CLASS_IDS, CLASS_LABELS, ID_TO_LABEL
     )
+
+
+    # OWN VALUES WITHOUT ADDITIONAL BS
+    try:
+        print("------------- OWN RAW METRICS -------------- ( RUNNING FROM WITHOU EVAL_HUMAN_INSTANCES.py")
+        pred_bool = pred['pred_human_masks'].flatten().astype(bool)
+        gt_bool = gt_ids > 0
+
+
+        tp = np.sum(np.logical_and(pred_bool, gt_bool))                  # True Positive
+        fp = np.sum(np.logical_and(pred_bool, np.logical_not(gt_bool)))  # False Positive
+        fn = np.sum(np.logical_and(np.logical_not(pred_bool), gt_bool))  # False Negative
+        tn = np.sum(np.logical_and(np.logical_not(pred_bool), np.logical_not(gt_bool)))  # True Negative
+
+        # Create confusion matrix
+        conf_matrix = np.array([[tp, fp],
+                                [fn, tn]])
+
+        print("TP, FP, FN, TN:", tp, fp, fn, tn)
+        print("Confusion Matrix:\n", conf_matrix)
+
+        # Optional: compute precision, recall, F1
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall    = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1        = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        accuracy = (tp + tn) / (tn + tp + fp + fn)
+        ious = tp / (tp + fp + fn)
+
+
+
+        print("Precision:", precision)
+        print("Recall:", recall)
+        print("F1 score:", f1)
+        print("IOU", ious)
+        print("Accuracy (percentage of correctly predicted points):", accuracy)
+    except:
+        print("Couldn't do custom metric code. Likely because of labels.")
+        pass
     # associate
     gt2pred = deepcopy(gt_instances)
     for label in gt2pred:

@@ -518,6 +518,7 @@ class InstanceSegmentation(pl.LightningModule):
                 # Export predicted instance-colored point cloud
                 pcd = trimesh.points.PointCloud(vertices=pred_coords, colors=pred_inst_color)
                 pcd.export(out_path / f"{scene}_pred.ply")
+                print(f"DEBUG || saved to {out_path / f'{scene}_pred.ply'}")
 
                 # Optional visualization code (commented out)
                 # v.add_points(
@@ -762,6 +763,8 @@ class InstanceSegmentation(pl.LightningModule):
             self.config.data.part2human
             or "pred_human_logits" not in output.keys()
         ):
+            print(f"DEBUG || Doing eval_instance_step_instance_segmentation")
+
             self.eval_instance_step_instance_segmentation(
                 output,
                 target,
@@ -778,6 +781,7 @@ class InstanceSegmentation(pl.LightningModule):
                 else None,
             )
         else:
+            print(f"DEBUG || Doing eval_isntance_step")
             self.eval_instance_step(
                 output,
                 target,

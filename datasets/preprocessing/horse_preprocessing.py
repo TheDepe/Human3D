@@ -17,7 +17,7 @@ import random
 class RealHorseSegmentation(BasePreprocessing):
     def __init__(
         self,
-        data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset (Copy)",
+        data_dir: str = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset",
         save_dir: str = "./data/horse/processed/",
         modes: tuple = ("validation", "train", "test"),
         n_jobs: int = -1,
@@ -150,9 +150,7 @@ class RealHorseSegmentation(BasePreprocessing):
         rgb = np.ones_like(pcd)
         labels = np.load(labels_path)
         if labels.ndim == 1:
-            labels = labels[:, np.newaxis]
-            # duplicate the part labels as instance labels.
-            labels[:, 1] = labels[:, 0]
+            labels = np.repeat(labels[:, np.newaxis], 2, axis=1)
 
         part_id = labels[:, [0]]  # part id
         instance_id = labels[:, [1]]  # instance id

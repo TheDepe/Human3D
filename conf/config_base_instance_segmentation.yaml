@@ -60,7 +60,7 @@ defaults:
   - data/datasets: egobody
   - data/collation_functions: voxelize_collate
   - logging: full
-  - model: mask3d_hp
+  - model: mask3d
   - metrics: miou
   - optimizer: adamw
   - scheduler: onecyclelr
