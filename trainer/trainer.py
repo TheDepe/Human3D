@@ -684,11 +684,13 @@ class InstanceSegmentation(pl.LightningModule):
         if raw_coordinates.shape[0] == 0:
             return 0.0
 
+        # RAW COORDS ARE SAME AS INPUT DATA
         data = ME.SparseTensor(
             coordinates=data.coordinates,
             features=data.features,
             device=self.device,
         )
+
 
         try:
             output = self.forward(

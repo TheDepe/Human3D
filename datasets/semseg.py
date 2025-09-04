@@ -433,6 +433,7 @@ class SemanticSegmentationDataset(Dataset):
         if self.cache_data:
             points = self.data[idx]["data"]
         else:
+            # RUNS HERE
             assert not self.on_crops, "you need caching if on crops"
             try:
                 points = np.load(self.data[idx]["filepath"].replace("../../", ""))
@@ -460,6 +461,7 @@ class SemanticSegmentationDataset(Dataset):
 
 
         # Add Augmentations: volume and image augmentations for train
+        # NOT HERE DURING EVAL
         if "train" in self.mode or self.is_tta:
             if self.cropping:
                 new_idx = self.random_cuboid(

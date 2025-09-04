@@ -274,7 +274,9 @@ def voxelize(
         clip_center_point.append(sample[8])
         clip_feature.append(sample[9])
 
+        # BOTH OG COORDS AND FUL_RES COORDS ARE SAME UP UNTIL HERE. SAME AS INPUT FILE.
         coords = np.floor(sample[0] / voxel_size)
+
         voxelization_dict.update(
             {
                 "coordinates": torch.from_numpy(coords).to("cpu").contiguous(),
@@ -440,6 +442,9 @@ def voxelize(
         coordinates = []
         features = []
 
+    # Returns here:
+    # Coordinates are the same as voxels. Includes a 0 for some reason but not important. 
+    # original coords are still the same as the input file.
     if "train" not in mode:
         return (
             NoGpu(
