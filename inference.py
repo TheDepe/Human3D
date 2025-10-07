@@ -220,10 +220,32 @@ def save_colorized_mesh(mesh, labels_mapped, output_file):
     colors = colors / 255.0
     mesh.visual.vertex_colors = (colors * 255).astype(np.uint8)
     mesh.export(output_file)
-    print(f"Saved file to {output_file}")
+    mesh.show()
+    #print(f"Saved file to {output_file}")
 
+def save_masked_mesh(mesh, labels_mapped, output_file, label_to_keep=1):
+    mask = (labels_mapped == label_to_keep)[:, 0]
+    faces_keep = mask[mesh.faces].all(axis=1)
+
+    # Filter vertices
+    new_vertices = mesh.vertices[mask]
+
+    # Map old vertex indices -> new indices
+    old_to_new = -np.ones(len(mask), dtype=int)
+    old_to_new[mask] = np.arange(np.sum(mask))
+
+    # Rebuild faces with new indices
+    new_faces = old_to_new[mesh.faces[faces_keep]]
+
+    # Create reduced mesh
+    new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=True)
+    new_mesh.export(output_file)
+    #print(f"Saved file to {output_file}")
+    #trimesh.Scene([mesh, new_mesh]).show()
 
 import yaml
+import tqdm
+from pathlib import Path
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -260,8 +282,9 @@ if __name__ == "__main__":
     else:
         rotations = None
 
+    data_path = cfg.get("dataset_path", None)
     ds = RealHorsesMPI(
-        data_path=cfg.get("dataset_path", ""),
+        data_path=data_path,
         file_identifier=cfg.get("file_identifier", None),
         ext=cfg.get("file_extension", ".ply"),
         rotations=rotations,
@@ -269,9 +292,32 @@ if __name__ == "__main__":
         device=device
         )
     
+    # Before running, check paths and confirm
+    
+    output_location = Path(cfg.get("out_path", "."))
+    
+    suffix = cfg.get("out_suffix", "_cleaned.ply")
+    print(f"Follow files will be altered/created:")
+    for file_path in ds.files:
+        # Construct output filename
+        f = file_path.relative_to(data_path)
+        output_path = output_location / f.with_name(f"{f.stem}{suffix}")
+        
+        # Check if the output file already exists
+        warning = " [! OVERWRITE]" if output_path.exists() else ""
+        
+        # Print report line
+        print(f"{file_path} -> {output_path}{warning}")
+
+    proceed = input("Proceed with cleaning? (y/n): ")
+    if proceed.lower() != 'y':
+        print("Operation cancelled.")
+        exit(0)
+
+    output_location.mkdir(parents=True, exist_ok=True)
     # DON'T use dataloader. We want to use each scan at its fullest resolution.
     # Each scan will be a different size, and we can't really collate this well.
-    for batch in ds:
+    for batch in tqdm.tqdm(ds):
         ( 
             data,
             coords,
@@ -299,7 +345,10 @@ if __name__ == "__main__":
         #     )
 
             labels = map_output_to_pointcloud_batched([mesh], outputs, [inverse_map])
-        if len(np.unique(labels)) == 1:
+        if len(np.unique(labels[0])) == 1:
             print("probably something went wrong. Detected no labels.")
-        print("Saving")
-        save_colorized_mesh(mesh, labels[0], "pcl_labelled_trimesh_TEST.ply")
+        #print("Saving")
+        file_name = Path(path).stem
+        #save_colorized_mesh(mesh, labels[0], file_name + "_cleaned.ply")
+        f = Path(path).relative_to(data_path)
+        save_masked_mesh(mesh, labels[0], output_location / f.with_name(f"{f.stem}{suffix}"), label_to_keep=1)
