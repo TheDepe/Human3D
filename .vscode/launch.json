@@ -5,7 +5,7 @@
             "name": "Inference",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/inference.py",
+            "program": "${workspaceFolder}/inference_optim.py",
             "cwd": "${workspaceFolder}",
             "python": "/home/dperrett/miniforge3/envs/human3d_cuda113/bin/python",
             "env": {

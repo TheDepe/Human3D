@@ -7,7 +7,7 @@ import MinkowskiEngine as ME
 from trimesh.transformations import rotation_matrix
 
 from torch.utils.data import DataLoader
-from datasets.real_horses import RealHorsesMPI
+from datasets.real_horses import RealHorsesMPI_BU
 
 from utils.utils import (
     load_checkpoint_with_missing_or_exsessive_keys,
@@ -283,7 +283,7 @@ if __name__ == "__main__":
         rotations = None
 
     data_path = cfg.get("dataset_path", None)
-    ds = RealHorsesMPI(
+    ds = RealHorsesMPI_BU(
         data_path=data_path,
         file_identifier=cfg.get("file_identifier", None),
         ext=cfg.get("file_extension", ".ply"),
