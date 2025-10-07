@@ -6,6 +6,9 @@ import albumentations as A
 import MinkowskiEngine as ME
 from trimesh.transformations import rotation_matrix
 
+from torch.utils.data import DataLoader
+from datasets.real_horses import RealHorsesMPI
+
 from utils.utils import (
     load_checkpoint_with_missing_or_exsessive_keys,
     load_backbone_checkpoint_with_missing_or_exsessive_keys,
@@ -78,7 +81,7 @@ def load_mesh(pcl_file, rotate=False, scale=False):
     """Load mesh with Trimesh"""
     mesh = trimesh.load(pcl_file, process=False)
 
-    #mesh.vertices -= mesh.vertices.mean(0)
+    mesh.vertices -= mesh.vertices.mean(0)
     if scale:
     # Scale down (meters)
         mesh.vertices *= 1/1000
@@ -149,34 +152,58 @@ def prepare_data(points, colors, device):
     return data, coords, features, unique_map, inverse_map
 
 
-def map_output_to_pointcloud(mesh, outputs, inverse_map, confidence_threshold=0.5):
+def map_output_to_pointcloud_batched(meshes, outputs, inverse_maps, confidence_threshold=0.5):
+    """
+    Map model outputs to point cloud labels for a batch of meshes.
+
+    Args:
+        meshes (list[trimesh.Trimesh]): List of meshes in the batch.
+        outputs (dict): Model outputs containing 'pred_logits' or 'pred_human_logits', 
+                        and 'pred_masks' (Q x N) per batch item.
+        inverse_maps (list[torch.Tensor]): List of inverse_maps per batch item.
+        confidence_threshold (float): Minimum confidence to assign a label.
+
+    Returns:
+        list[np.ndarray]: List of labels per mesh, each shape (num_points, 1)
+    """
+    labels_list = []
+
+    batch_size = len(meshes)
+
     try:
-        logits = outputs['pred_logits'][0].detach().cpu()   # [Q, C]
-        masks  = outputs['pred_masks'][0].detach().cpu()    # [Q, N]
+        logits_batch = outputs['pred_logits']    # [B, Q, C]
+        masks_batch  = outputs['pred_masks']     # [B, Q, N]
     except KeyError:
-        logits = outputs['pred_human_logits'][0].detach().cpu()
-        masks  = outputs['pred_masks'][0].detach().cpu()
+        logits_batch = outputs['pred_human_logits']
+        masks_batch  = outputs['pred_masks']
 
-    num_queries, num_points = masks.shape
-    labels = np.zeros((len(mesh.vertices), 1))
+    for b in range(batch_size):
+        logits = logits_batch[b].detach().cpu()  # [Q, C]
+        masks  = masks_batch[b].detach().cpu().T   # [Q, N]
+        inverse_map = inverse_maps[b]
 
-    
-    p_labels = torch.softmax(logits, dim=-1)       # [C]
-    p_masks  = torch.sigmoid(masks)                # [N]
+        num_queries, num_points = masks.shape
+        labels = np.zeros((len(meshes[b].vertices), 1), dtype=np.uint8)
 
-    l = torch.argmax(p_labels).item()
-    c_label = torch.max(p_labels).item()
+        # Compute per-query probabilities
+        p_labels = torch.softmax(logits, dim=-1)  # [Q, C]
+        p_masks  = torch.sigmoid(masks)           # [Q, N]
 
-    # binary mask
-    m = p_masks > 0.5
-    # mask confidence
-    c_m = p_masks[m].sum() / (m.sum() + 1e-8)
-    c = c_label * c_m
+        for q in range(num_queries):
+            l = torch.argmax(p_labels[q]).item()
+            c_label = torch.max(p_labels[q]).item()
+            
+            m = p_masks[q] > 0.5                  # binary mask
+            c_m = p_masks[q][m].sum() / (m.sum() + 1e-8)  # mask confidence
+            c = c_label * c_m
 
-    if l < 200 and c > confidence_threshold:
-        mask_fullres = m[inverse_map.cpu().numpy()]   # expand to full resolution
-        labels[mask_fullres] = l + 1   # offset to match dataset
-    return labels
+            if l < 200 and c > confidence_threshold:
+                mask_fullres = m[inverse_map.cpu().numpy()]  # expand to full res
+                labels[mask_fullres] = l + 1                # assign label
+
+        labels_list.append(labels)
+
+    return labels_list
 
 
 def save_colorized_mesh(mesh, labels_mapped, output_file):
@@ -196,7 +223,15 @@ def save_colorized_mesh(mesh, labels_mapped, output_file):
     print(f"Saved file to {output_file}")
 
 
+import yaml
+
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        cfg = yaml.safe_load(f)
+    return cfg
 if __name__ == "__main__":
+
+    cfg = load_config("test_cfg.yaml")
     model = get_model("/ssd-disk/data_ssd/VAREN/models/Mask3d/fine_turned_horse_model.ckpt")
     #model = get_model("/ssd-disk/data_ssd/VAREN/models/Mask3d/horse_mask_synthetic.ckpt")
     model.eval()
@@ -204,28 +239,57 @@ if __name__ == "__main__":
     model.to(device)
 
     # WORKS
-    pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/saved/Mask3D_horse_big_run_eval/visualizations/H0175_still1.000023_full_instance_colored.ply"
+    #pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/saved/Mask3D_horse_big_run_eval/visualizations/H0175_still1.000023_full_instance_colored.ply"
     # 
     #pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/data/LUCID_HLT003S-001_212300601__20220608164720234_image263.ply"
-    #pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/data/H0022_still1.000003.obj"
+    #pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/data/H0237_head1.000003.obj"
     #pointcloud_file = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0022/H00022_still1.000051_raw_scan.ply"
     #pointcloud_file = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0175/H0175_still1.000023_raw_scan.ply"
-    pointcloud_file = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0120/H0120_other1.000047_raw_scan.ply"
+    #pointcloud_file = "/ssd-disk/data_ssd/VAREN/horse_segmentation_evaluation_dataset/H0120/H0120_other1.000047_raw_scan.ply"
     #pointcloud_file = "/home/dperrett/Documents/horse_project/Repos/Human3D/saved/Mask3D_horse_big_run_eval/visualizations/H0120_other1.000047_full_instance_colored.ply"
     
-    mesh, points, colors = load_mesh(pointcloud_file, rotate=False, scale=False) # For manually processed data, set these to false
 
-    data, coords, features, unique_map, inverse_map = prepare_data(points, colors, device)
+    # Preprocessing
+    pre_pro_cfg = cfg.get("preprocessing", None)
+    if pre_pro_cfg:
+        rotations = [
+            {"axis": "x", "angle": pre_pro_cfg.get("rotation_x", 0)},
+            {"axis": "y", "angle": pre_pro_cfg.get("rotation_y", 0)},
+            {"axis": "z", "angle": pre_pro_cfg.get("rotation_x", 0)} 
+        ]
+    else:
+        rotations = None
 
-    with torch.no_grad():
-        outputs = model(
+    ds = RealHorsesMPI(
+        data_path=cfg.get("dataset_path", ""),
+        file_identifier=cfg.get("file_identifier", None),
+        ext=cfg.get("file_extension", ".ply"),
+        rotations=rotations,
+        scaling = cfg.get("data_scaling", 1),
+        device=device
+        )
+    
+    # DON'T use dataloader. We want to use each scan at its fullest resolution.
+    # Each scan will be a different size, and we can't really collate this well.
+    for batch in ds:
+        ( 
             data,
-            point2segment=[torch.zeros(data.coordinates.shape[0], device=device)],
-            raw_coordinates=features[:, -3:],
-            is_eval=True,
-            clip_feat=None,
-            clip_pos=False)
-        # x = self.model(
+            coords,
+            features,
+            unique_map,
+            inverse_map,
+            path,
+            mesh
+        ) = batch.values()
+        with torch.no_grad():
+            outputs = model(
+                data,
+                point2segment=[torch.zeros(data.coordinates.shape[0], device=device)],
+                raw_coordinates=features[:, -3:],
+                is_eval=True,
+                clip_feat=None,
+                clip_pos=False)
+            # x = self.model(
         #         x,
         #         point2segment,
         #         raw_coordinates=raw_coordinates,
@@ -234,7 +298,8 @@ if __name__ == "__main__":
         #         clip_pos=clip_pos,
         #     )
 
-    labels = map_output_to_pointcloud(mesh, outputs, inverse_map, confidence_threshold=0.5)
-    if len(np.unique(labels)) == 1:
-        print("probably something went wrong. Detected no labels.")
-    save_colorized_mesh(mesh, labels, "data/pcl_labelled_trimesh.ply")
+            labels = map_output_to_pointcloud_batched([mesh], outputs, [inverse_map])
+        if len(np.unique(labels)) == 1:
+            print("probably something went wrong. Detected no labels.")
+        print("Saving")
+        save_colorized_mesh(mesh, labels[0], "pcl_labelled_trimesh_TEST.ply")

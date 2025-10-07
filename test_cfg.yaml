@@ -1,0 +1,11 @@
+model_path: /ssd-disk/data_ssd/VAREN/models/Mask3d/fine_turned_horse_model.ckpt
+
+dataset_path: /home/dperrett/Documents/horse_project/Repos/Human3D/data/
+file_identifier: head1.000003
+file_extension: .obj
+data_scaling: 0.001
+
+preprocessing:
+  rotation_x: 90
+  rotation_y: 0
+  rotation_z: 90
