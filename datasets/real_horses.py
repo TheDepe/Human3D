@@ -225,9 +225,8 @@ def collate_sparse_batch_inference(batch, voxel_size=0.02, device=torch.device("
     )
 
     data_batch = ME.SparseTensor(
-        coordinates=coords_batch,
-        features=feats_batch,
-        device=device
+        coordinates=coords_batch.to(device),
+        features=feats_batch.to(device)
     )
 
     return {
@@ -238,6 +237,7 @@ def collate_sparse_batch_inference(batch, voxel_size=0.02, device=torch.device("
         "features": torch.vstack(og_features_list)
     }
     
+
 
 def apply_rotations(mesh: trimesh.Trimesh, rotations: Optional[list[dict[str, float]]] = None):
     """
